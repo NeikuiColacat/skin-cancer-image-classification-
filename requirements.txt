@@ -9,5 +9,5 @@ scikit-learn
 jupyter
 scikit-image
 opencv-python
-torchsummary
+torch-summary==1.4.4
 numba
