@@ -1,0 +1,13 @@
+# requirements.txt
+
+optuna==3.5.0
+numpy
+pandas
+matplotlib
+seaborn
+scikit-learn
+jupyter
+scikit-image
+opencv-python
+torchsummary
+numba

@@ -1,16 +1,35 @@
+# name: DNN
+# channels:
+#   - defaults
+# dependencies:
+#   - python=3.11
+#   - optuna=3.5.0
+#   - numpy
+#   - pandas
+#   - matplotlib
+#   - seaborn
+#   - scikit-learn
+#   - jupyter
+#   - pip:
+#     - torchvision==0.16.2+cu121
+#     - torch==2.1.2+cu121
+#     - scikit-image
+#     - opencv-python==4.9.0
+
 name: DNN
 channels:
   - defaults
 dependencies:
   - python=3.11
-  - optuna=3.5.0
-  - numpy
-  - pandas
-  - matplotlib
-  - seaborn
-  - scikit-learn
-  - jupyter
+  - pip  # 添加 pip 作为依赖
   - pip:
+    - optuna==3.5.0
+    - numpy
+    - pandas
+    - matplotlib
+    - seaborn
+    - scikit-learn
+    - jupyter
     - torchvision==0.16.2+cu121
     - torch==2.1.2+cu121
     - scikit-image
