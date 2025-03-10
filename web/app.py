@@ -1,92 +1,128 @@
 import streamlit as st
 import torch
+import time
+import numpy as np
+import matplotlib.pyplot as plt
 from torchvision import transforms, models
 from PIL import Image
 from torch import nn
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
 
-# 自定义 CSS 样式
-st.markdown("""
-    <style>
-        .title {
-            font-size: 40px;
-            font-weight: bold;
-            color: #4CAF50;
-            text-align: center;
-        }
-        .prediction {
-            font-size: 20px;
-            font-weight: bold;
-            color: #FF5722;
-            text-align: center;
-        }
-        .bar-chart {
-            margin: auto;
-            display: block;
-            width: 80%;
-        }
-    </style>
-""", unsafe_allow_html=True)
-
-# 定义模型加载函数
+# 获取模型
 def get_model(model_name: str):
     use_pretrained = True
-    num_classes = 7
-    
-    if model_name == 'mobilenet_v3':
-        model = models.mobilenet_v3_large(weights='DEFAULT')
-        num_ftrs = model.classifier[3].in_features
-        model.classifier[3] = nn.Linear(num_ftrs, num_classes)
+    num_classes = 7  # 皮肤癌分类数
+
+    if model_name == 'resnet_pret':
+        model_ft = models.resnet50(pretrained=use_pretrained)
+        num_ftrs = model_ft.fc.in_features
+        model_ft.fc = nn.Linear(num_ftrs, num_classes)
+    elif model_name == 'densenet_pret':
+        model_ft = models.densenet121(pretrained=use_pretrained)
+        num_ftrs = model_ft.classifier.in_features
+        model_ft.classifier = nn.Linear(num_ftrs, num_classes)
+    elif model_name == 'mobilenet_v3':
+        model_ft = models.mobilenet_v3_large(pretrained=use_pretrained)
+        num_ftrs = model_ft.classifier[3].in_features
+        model_ft.classifier[3] = nn.Linear(num_ftrs, num_classes)
+    elif model_name == 'efficientnet':
+        model_ft = models.efficientnet_b1(pretrained=use_pretrained)
+        num_ftrs = model_ft.classifier[1].in_features
+        model_ft.classifier[1] = nn.Linear(num_ftrs, num_classes)
     else:
-        st.warning("无效的模型名称")
+        st.error("请选择有效的模型: 'resnet_pret', 'densenet_pret', 'mobilenet_v3', 'efficientnet'.")
         return None
 
+    return model_ft
+
+# 载入模型
+@st.cache(allow_output_mutation=True)
+def load_model(model_path, model_name):
+    model = get_model(model_name)
+    model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
+    model.eval()
     return model
 
-# 加载模型
-model_name = 'mobilenet_v3'
-model = get_model(model_name)
-model.load_state_dict(torch.load('mobilenetv3_pret.pth', map_location=torch.device('cpu')))
-model.eval()
-
-# 定义图像预处理函数
+# 预处理图片
 norm_means = [0.77148203, 0.55764165, 0.58345652]
 norm_std = [0.12655577, 0.14245141, 0.15189891]
 img_h, img_w = 224, 224
-
 val_test_transform = transforms.Compose([
     transforms.Resize((img_h, img_w)),
     transforms.ToTensor(),
     transforms.Normalize(norm_means, norm_std)
 ])
 
-# Streamlit 应用界面
-st.markdown('<div class="title">图像分类服务</div>', unsafe_allow_html=True)
-st.write("上传一张图像进行分类")
-
-# 文件上传
-uploaded_file = st.file_uploader("选择一张图像", type=["jpg", "png"])
-
-if uploaded_file is not None:
-    image = Image.open(uploaded_file)
-    image = image.convert("RGB")  # 确保图像为 RGB 模式
-    st.image(image, caption="上传的图像", use_column_width=True)
-
-    if st.button("预测"):
-        # 预处理图像
+# 分类图片
+def classify_image(model, image):
+    with torch.no_grad():
         image_tensor = val_test_transform(image).unsqueeze(0)
+        scores = model(image_tensor)
+        return torch.softmax(scores, dim=1).squeeze(0).numpy()
 
-        # 进行预测
-        with torch.no_grad():
-            scores = model(image_tensor)
-            probabilities = torch.nn.functional.softmax(scores, dim=1)
-            predicted_class = torch.argmax(probabilities, dim=1)
+# 生成 PDF 报告
+def generate_pdf(patient_info, scores, labels):
+    pdf_path = "classification_report.pdf"
+    c = canvas.Canvas(pdf_path, pagesize=letter)
+    c.drawString(100, 750, "皮肤癌分类报告")
+    c.drawString(100, 730, f"姓名: {patient_info['name']}")
+    c.drawString(100, 710, f"性别: {patient_info['gender']}")
+    c.drawString(100, 690, f"年龄: {patient_info['age']}")
+    c.drawString(100, 670, f"ID: {patient_info['id']}")
+    
+    c.drawString(100, 640, "分类得分:")
+    for i, label in enumerate(labels):
+        c.drawString(120, 620 - i * 20, f"{label}: {scores[i]:.2f}")
+    
+    c.drawString(100, 500, f"最终分类结果: {labels[np.argmax(scores)]}")
+    c.save()
+    return pdf_path
 
-            # 显示预测结果
-            st.markdown(f'<div class="prediction">预测类别索引: {predicted_class.item()}</div>', unsafe_allow_html=True)
+# Streamlit 主函数
+def main():
+    st.title("皮肤癌图像分类")
+    labels = ["类别 0", "类别 1", "类别 2", "类别 3", "类别 4", "类别 5", "类别 6"]
+
+    # 输入病人信息
+    st.sidebar.header("病人信息")
+    name = st.sidebar.text_input("姓名")
+    gender = st.sidebar.selectbox("性别", ("男", "女"))
+    age = st.sidebar.number_input("年龄", min_value=0, max_value=120, step=1)
+    patient_id = st.sidebar.text_input("病人 ID")
+    
+    patient_info = {"name": name, "gender": gender, "age": age, "id": patient_id}
+
+    model_name = st.sidebar.selectbox("选择模型", ('resnet_pret', 'densenet_pret', 'mobilenet_v3', 'efficientnet'))
+    model_path = st.sidebar.file_uploader("上传模型权重文件 (.pth)")
+    image_file = st.file_uploader("上传皮肤癌图片", type=["jpg", "jpeg", "png"])
+
+    if model_path is not None and image_file is not None:
+        model = load_model(model_path, model_name)
+        image = Image.open(image_file)
+        st.image(image, caption="上传的图片", use_column_width=True)
+
+        if st.button("开始分类"):
+            scores = classify_image(model, image)
+            chart_placeholder = st.empty()
+
+            for i in range(10):
+                progress_scores = scores * (i + 1) / 10  # 逐步增加分数
+                
+                fig, ax = plt.subplots()
+                ax.bar(labels, progress_scores, color='skyblue')
+                ax.set_ylim(0, 1)
+                ax.set_title("分类得分变化")
+                
+                chart_placeholder.pyplot(fig)  # 更新图表
+                time.sleep(0.1)  # 控制动画速度
+
+            st.write(f"最终分类结果: {labels[np.argmax(scores)]}")
             
-            # 假设类别名称为一个列表
-            class_names = ["类别1", "类别2", "类别3", "类别4", "类别5", "类别6", "类别7"]
-            st.markdown(f'<div class="prediction">预测类别: {class_names[predicted_class.item()]}</div>', unsafe_allow_html=True)
-            
-            # 展示分类分数的柱状图
-            st.bar_chart(probabilities.squeeze().numpy(), use_container_width=True)
+            # 生成 PDF 报告
+            pdf_path = generate_pdf(patient_info, scores, labels)
+            with open(pdf_path, "rb") as pdf_file:
+                st.download_button("📥 下载报告", pdf_file, file_name="classification_report.pdf", mime="application/pdf")
+
+if __name__ == '__main__':
+    main()
