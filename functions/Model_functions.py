@@ -140,6 +140,18 @@ def initialise_model(model_name, num_classes, feature_extract, use_pretrained=Tr
         set_parameter_requires_grad(model_ft, feature_extract)
         num_ftrs = model_ft.classifier.in_features
         model_ft.classifier = nn.Linear(num_ftrs, num_classes)
+    ###addtionally
+    elif model_name == 'mobilenet_v3':
+        model_ft = models.mobilenet_v3_large(pretrained=use_pretrained)
+        set_parameter_requires_grad(model_ft, feature_extract)
+        num_ftrs = model_ft.classifier[3].in_features
+        model_ft.classifier[3] = nn.Linear(num_ftrs, num_classes)
+    elif model_name == 'effiecentnet':
+        model_ft = models.efficientnet_b1(pretrained=use_pretrained)
+        set_parameter_requires_grad(model_ft, feature_extract)
+        num_ftrs = model_ft.classifier[1].in_features
+        model_ft.classifier[1] = nn.Linear(num_ftrs, num_classes)
+    ##
     else:
         print("Invalid model name, choose between 'resnet_pret', 'densenet_pret'.")
         exit()
